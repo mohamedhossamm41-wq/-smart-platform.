@@ -429,4 +429,165 @@
         document.getElementById('reportSubTitle').innerText = `إجمالي المستحقين للإنذار: (${list.length} طالب) في ${currentWarningGrade}`;
 
         if (list.length === 0) {
-            container.innerHTML = `<table style="width:100%"><thead><tr><th>م</th><th>اسم الطالب</th><th>الصف / الفصل</th><th>أيام الغياب</th><th>الإجراء / الحالة</th></tr></thead><tbody><tr><td colspan="5">لا توجد حالات غياب مطابقة لهذا القسم حالياً..</
+            container.innerHTML = `<table style="width:100%"><thead><tr><th>م</th><th>اسم الطالب</th><th>الصف / الفصل</th><th>أيام الغياب</th><th>الإجراء / الحالة</th></tr></thead><tbody><tr><td colspan="5">لا توجد حالات غياب مطابقة لهذا القسم حالياً..</td></tr></tbody></table>`;
+            return;
+        }
+
+        const chunkSize = 10;
+        for (let i = 0; i < list.length; i += chunkSize) {
+            const chunk = list.slice(i, i + chunkSize);
+            const groupNum = Math.floor(i / chunkSize) + 1;
+
+            let groupHTML = `
+                <div class="group-header">
+                    <b>📋 مجموعة رقم (${groupNum}) - عدد الطلاب في الجدول: (${chunk.length})</b>
+                    <button class="excel-btn" style="padding: 6px 14px; font-size: 13px;" onclick="exportSingleGroupToExcel(${groupNum - 1}, this)">📥 تصدير الجدول لـ Excel (.xls)</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>م</th>
+                            <th>اسم الطالب</th>
+                            <th>الصف / الفصل</th>
+                            <th>أيام الغياب</th>
+                            <th>الإجراء / الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+            chunk.forEach((item, idx) => {
+                let statusText = getWarningStatusText(item.count);
+                let gradeAndSub = `${item.grade} - ${item.sub}`;
+
+                groupHTML += `
+                    <tr>
+                        <td>${i + idx + 1}</td>
+                        <td><b>${item.student}</b></td>
+                        <td style="white-space: nowrap;">${gradeAndSub}</td>
+                        <td style="color:red; font-weight:bold;">${item.count} أيام</td>
+                        <td><b>${statusText}</b></td>
+                    </tr>`;
+            });
+
+            groupHTML += `</tbody></table>`;
+            container.innerHTML += groupHTML;
+        }
+    }
+
+    function downloadExcelHtml(dataArray, filename, btnElement) {
+        if (!dataArray || dataArray.length === 0) {
+            alert("⚠️ لا توجد بيانات في هذا الجدول لتصديرها!");
+            return;
+        }
+
+        let originalText = "";
+        if (btnElement) {
+            originalText = btnElement.innerText;
+            btnElement.innerText = "⏳ جاري التحميل...";
+            btnElement.style.background = "#d97706";
+            btnElement.disabled = true;
+        }
+
+        let htmlContent = `
+            <html lang="ar" dir="rtl">
+            <head><meta charset="UTF-8"><title>${filename}</title></head>
+            <body>
+                <table border="1">
+                    <tr><th colspan="5" style="background:#0f172a; color:#fff; font-size:16px; padding:10px;">مدرسة القصاصين الثانوية المشتركة - تقرير الإنذارات</th></tr>
+                    <tr><th colspan="5" style="padding:8px;">الصف: ${currentWarningGrade} | عدد الأيام: ${currentWarningDays} أيام فأكثر</th></tr>
+                    <tr style="background:#f1f5f9;">
+                        <th>م</th>
+                        <th>اسم الطالب</th>
+                        <th>الصف / الفصل</th>
+                        <th>عدد أيام الغياب</th>
+                        <th>الحالة والإجراء</th>
+                    </tr>`;
+
+        dataArray.forEach((item, idx) => {
+            let statusText = getWarningStatusText(item.count);
+            htmlContent += `
+                <tr>
+                    <td style="text-align:center;">${idx + 1}</td>
+                    <td>${item.student}</td>
+                    <td style="text-align:center;">${item.grade} - ${item.sub}</td>
+                    <td style="text-align:center; color:red; font-weight:bold;">${item.count}</td>
+                    <td><b>${statusText}</b></td>
+                </tr>`;
+        });
+
+        htmlContent += `</table></body></html>`;
+
+        const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        
+        document.body.appendChild(a);
+        a.click();
+        
+        setTimeout(() => {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            if (btnElement) {
+                btnElement.innerText = originalText;
+                btnElement.style.background = "#0d9488";
+                btnElement.disabled = false;
+            }
+        }, 800);
+    }
+
+    function exportSingleGroupToExcel(groupIndex, btn) {
+        const chunkSize = 10;
+        const chunk = currentFilteredWarnings.slice(groupIndex * chunkSize, (groupIndex + 1) * chunkSize);
+        downloadExcelHtml(chunk, `انذارات_${currentWarningGrade}_${currentWarningDays}_ايام_مجموعة_${groupIndex + 1}.xls`, btn);
+    }
+
+    function exportAllGroupsToExcel(btn) {
+        if (!currentFilteredWarnings || currentFilteredWarnings.length === 0) {
+            alert("⚠️ لا توجد بيانات إنذارات مطابقة في هذا القسم لتصديرها!");
+            return;
+        }
+
+        const chunkSize = 10;
+        for (let i = 0; i < currentFilteredWarnings.length; i += chunkSize) {
+            const chunk = currentFilteredWarnings.slice(i, i + chunkSize);
+            const groupNum = Math.floor(i / chunkSize) + 1;
+            downloadExcelHtml(chunk, `انذارات_${currentWarningGrade}_${currentWarningDays}_ايام_جدول_${groupNum}.xls`, btn);
+        }
+    }
+
+    function printAllTables() {
+        if (!currentFilteredWarnings || currentFilteredWarnings.length === 0) {
+            alert("⚠️ لا توجد بيانات مطابقة في هذا القسم لطباعتها!");
+            return;
+        }
+        window.print();
+    }
+
+    function clearArchiveData() {
+        if(confirm("هل أنت متأكد من مسح جميع بيانات الأرشيف نهائياً؟")) {
+            archive = [];
+            localStorage.removeItem("archive");
+            if (isFirebaseReady) db.ref('attendance_archive').remove();
+            renderArchiveTable(archive);
+            document.getElementById('studentStatsBox').style.display = 'none';
+            alert("تم مسح الأرشيف بنجاح.");
+        }
+    }
+
+    function clearWarningsData() {
+        if(confirm(`هل أنت متأكد من مسح سجلات هذا القسم؟`)) {
+            archive = archive.filter(i => !(i.grade === currentWarningGrade && i.status === 'غائب'));
+            localStorage.setItem("archive", JSON.stringify(archive));
+            if (isFirebaseReady) db.ref('attendance_archive').set(archive);
+            renderWarningsTable();
+            alert("تم المسح بنجاح.");
+        }
+    }
+
+    window.onload = loadArchiveData;
+</script>
+</html>
